@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preekbeheer - met lokale opslag en CSV-export naar preektemp.csv</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, 'Segoe UI', 'Roboto', sans-serif; }
+        body { background: #eef2f7; margin: 0; padding: 24px 20px; }
+        .container { max-width: 1300px; margin: 0 auto; background: white; border-radius: 32px; box-shadow: 0 12px 30px rgba(0,0,0,0.08); padding: 24px 28px 32px; }
+        h1 { font-size: 1.8rem; font-weight: 700; margin: 0 0 4px; color: #1a4b6e; }
+        .sub { color: #3f6b8c; border-left: 4px solid #2c7da0; padding-left: 16px; margin-bottom: 24px; }
+        .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid #dce7ef; padding-bottom: 16px; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 10px; }
+        button, .file-label { background: #f0f5fa; border: 1px solid #cbdae6; padding: 8px 18px; border-radius: 40px; font-weight: 500; font-size: 0.85rem; cursor: pointer; transition: 0.2s; }
+        button:hover, .file-label:hover { background: #e3ecf3; transform: translateY(-1px); }
+        .btn-primary { background: #1f6e97; border-color: #155e82; color: white; }
+        .btn-primary:hover { background: #0e567a; }
+        .btn-danger { background: #ffe3e1; border-color: #f0b9b6; color: #b13e3a; }
+        .add-form { display: flex; flex-wrap: wrap; gap: 12px; background: #f8fbfe; border-radius: 60px; padding: 12px 20px; margin-bottom: 24px; border: 1px solid #dee9f2; }
+        .add-form input { flex: 1; min-width: 140px; padding: 10px 14px; border-radius: 40px; border: 1px solid #cbdae6; background: white; font-size: 0.9rem; }
+        .search-box { background: #fefefe; border: 1px solid #d0dfea; border-radius: 48px; padding: 8px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        .search-box input { border: none; background: transparent; padding: 10px 0; width: 100%; outline: none; font-size: 0.9rem; }
+        .stats { display: flex; flex-wrap: wrap; justify-content: space-between; background: #eef3f9; border-radius: 24px; padding: 12px 22px; margin-bottom: 22px; gap: 12px; }
+        .stat-card { background: white; border-radius: 32px; padding: 6px 18px; font-weight: 500; }
+        .stat-number { font-weight: 800; font-size: 1.4rem; margin-left: 8px; color: #1a5d7e; }
+        .duplicate-badge { background: #fff2db; border-radius: 28px; padding: 6px 18px; font-size: 0.85rem; }
+        table { width: 100%; border-collapse: collapse; border-radius: 20px; overflow: hidden; }
+        th { background: #e6eef5; padding: 14px 12px; text-align: left; cursor: pointer; user-select: none; font-weight: 600; }
+        th:hover { background: #dce5ef; }
+        td { padding: 12px; border-bottom: 1px solid #e4ecf2; }
+        .sort-indicator { font-size: 0.7rem; margin-left: 8px; }
+        .empty-row td { text-align: center; padding: 40px; color: #7c9bb3; font-style: italic; }
+        @media (max-width: 700px) { .container { padding: 16px; } th, td { font-size: 0.8rem; padding: 8px; } button { padding: 5px 12px; } }
+        .footer-note { margin-top: 20px; font-size: 0.7rem; color: #6f8ea8; text-align: center; }
+        #hiddenFileInput { display: none; }
+        .info-message { background: #e9f4e9; border-left: 4px solid #2e7d32; padding: 8px 15px; margin-bottom: 15px; border-radius: 20px; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📖 Preekbeheer – blijvende opslag & CSV (preektemp.csv)</h1>
+    <div class="sub">Notatie intern: <strong>DD-MM-JJJJ</strong> · Herkenning van o.a. "15 jan 2025", "2024-12-31"</div>
+    <div class="info-message">
+        💾 Alle preken worden automatisch opgeslagen in uw browser (localStorage). Bij herstart staan ze er weer.<br>
+        📁 Gebruik "Exporteer naar preektemp.csv" om de huidige lijst naar een bestand te schrijven.<br>
+        📂 Gebruik "Importeer CSV (vervang huidige)" om een eerder bewaard bestand terug te laden.
+    </div>
+
+    <div class="toolbar">
+        <div class="btn-group">
+            <button id="clearAllBtn" class="btn-danger">🗑️ Lijst wissen</button>
+            <button id="importReplaceBtn" class="btn-primary">📂 Importeer CSV (vervang huidige)</button>
+            <button id="exportToCsvBtn">💾 Exporteer naar preektemp.csv</button>
+            <button id="exportAllPdf">📄 Exporteer ALLE (PDF)</button>
+        </div>
+        <div class="btn-group">
+            <button id="exportSortedCsv" class="btn-primary">📌 Exporteer GESORTEERDE (CSV)</button>
+            <button id="exportSortedPdf" class="btn-primary">📌 Exporteer GESORTEERDE (PDF)</button>
+        </div>
+    </div>
+
+    <div class="add-form">
+        <input type="text" id="newDate" placeholder="Datum (bijv. 15 jan 2025 of 31-12-2024)">
+        <input type="text" id="newChurch" placeholder="Gemeente">
+        <input type="text" id="newTitle" placeholder="Titel preek">
+        <button id="addBtn" class="btn-primary">➕ Toevoegen</button>
+    </div>
+
+    <div class="search-box">
+        🔍 <input type="text" id="searchInput" placeholder="Zoeken op datum, gemeente of titel ...">
+        <span style="font-size:0.75rem;">💡 Klik op kolomkop om te sorteren</span>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">📊 Totaal preken: <span id="totalCount" class="stat-number">0</span></div>
+        <div class="stat-card">🔍 Weergegeven: <span id="displayedCount" class="stat-number">0</span></div>
+        <div class="duplicate-badge" id="duplicateStats">
+            📚 Dubbele titels: -- &nbsp;&nbsp;|&nbsp;&nbsp; 🏠 Dubbele gemeenten: --
+        </div>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table id="sermonTable">
+            <thead><tr>
+                <th data-sort="date">📅 Datum <span class="sort-indicator" id="sortDateInd">↕️</span></th>
+                <th data-sort="church">🏛️ Gemeente <span class="sort-indicator" id="sortChurchInd">↕️</span></th>
+                <th data-sort="title">📖 Titel <span class="sort-indicator" id="sortTitleInd">↕️</span></th>
+            </tr></thead>
+            <tbody id="tableBody"><tr class="empty-row"><td colspan="3">Geen preken. Voeg een preek toe of importeer CSV.</td></tr></tbody>
+        </table>
+    </div>
+    <div class="footer-note">
+        ✅ Datumnotaties zoals "15 jan 2025", "jan 15 2025", "2025-01-15", "15/1/2025" worden omgezet naar DD-MM-JJJJ.<br>
+        Bij elke toevoeging of import wordt de lijst automatisch opgeslagen in uw browser.
+    </div>
+</div>
+
+<script>
+    // ---------- Global datamodel ----------
+    let sermons = [];            // { dateDisplay, dateObj, church, title }
+    let currentSort = { column: 'date', direction: 'asc' };
+    let searchTerm = "";
+
+    // ---------- Maandafkortingen ----------
+    const monthAbbr = {
+        'jan':1,'jan.':1,'januari':1, 'feb':2,'feb.':2,'februari':2, 'mrt':3,'mrt.':3,'maart':3,
+        'apr':4,'apr.':4,'april':4, 'mei':5, 'jun':6,'jun.':6,'juni':6, 'jul':7,'jul.':7,'juli':7,
+        'aug':8,'aug.':8,'augustus':8, 'sep':9,'sep.':9,'september':9, 'okt':10,'okt.':10,'oktober':10,
+        'nov':11,'nov.':11,'november':11, 'dec':12,'dec.':12,'december':12
+    };
+    function getMonthNumber(txt) {
+        let lower = txt.toLowerCase().replace(/\.$/, '');
+        return monthAbbr[lower] || monthAbbr[lower.replace(/\.$/, '')] || null;
+    }
+
+    // ---------- Datum parser (ondersteunt maandafkortingen) ----------
+    function parseToDMY(dateInput) {
+        if (!dateInput || dateInput.trim() === "") return null;
+        let raw = dateInput.toString().trim();
+        // 1. Maandafkorting patroon
+        let words = raw.split(/[-\/.\s]+/);
+        for (let i=0; i<words.length; i++) {
+            let mon = getMonthNumber(words[i]);
+            if (mon !== null) {
+                let day = null, year = null;
+                for (let j=0; j<words.length; j++) {
+                    if (j===i) continue;
+                    let num = parseInt(words[j],10);
+                    if (!isNaN(num)) {
+                        if (num>=1 && num<=31 && day===null) day = num;
+                        else if (num>=1000 && num<=3000 && year===null) year = num;
+                        else if (year===null && num>=0 && num<100) year = 2000 + num;
+                    }
+                }
+                if (day && year && day>=1 && day<=31) {
+                    let date = new Date(year, mon-1, day);
+                    if (date && date.getFullYear()===year && date.getMonth()===mon-1 && date.getDate()===day) {
+                        let dmystr = `${String(day).padStart(2,'0')}-${String(mon).padStart(2,'0')}-${year}`;
+                        return { dateObj: date, dateStr: dmystr };
+                    }
+                }
+            }
+        }
+        // 2. Standaard patronen
+        let patterns = [
+            { regex: /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/, order: 'dmy' },
+            { regex: /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/, order: 'mdy' },
+            { regex: /^(\d{4})-(\d{1,2})-(\d{1,2})$/, order: 'ymd' }
+        ];
+        for (let p of patterns) {
+            let m = raw.match(p.regex);
+            if (m) {
+                let a = parseInt(m[1],10), b = parseInt(m[2],10), c = parseInt(m[3],10);
+                let y, mth, d;
+                if (p.order === 'dmy') { d = a; mth = b; y = c; }
+                else if (p.order === 'mdy') { mth = a; d = b; y = c; }
+                else { y = a; mth = b; d = c; }
+                let date = new Date(y, mth-1, d);
+                if (date && date.getFullYear()===y && date.getMonth()===mth-1 && date.getDate()===d) {
+                    let dmystr = `${String(d).padStart(2,'0')}-${String(mth).padStart(2,'0')}-${y}`;
+                    return { dateObj: date, dateStr: dmystr };
+                }
+            }
+        }
+        // 3. Fallback
+        let tryDate = new Date(raw);
+        if (!isNaN(tryDate.getTime())) {
+            let y = tryDate.getFullYear(), m = tryDate.getMonth()+1, d = tryDate.getDate();
+            if (y>1000 && y<3000 && m>=1 && m<=12 && d>=1) {
+                let dmystr = `${String(d).padStart(2,'0')}-${String(m).padStart(2,'0')}-${y}`;
+                return { dateObj: tryDate, dateStr: dmystr };
+            }
+        }
+        return null;
+    }
+
+    // ---------- Opslag in localStorage ----------
+    const STORAGE_KEY = "sermons_list";
+    function saveToLocalStorage() {
+        const toStore = sermons.map(s => ({
+            dateDisplay: s.dateDisplay,
+            dateObj: s.dateObj.toISOString(),
+            church: s.church,
+            title: s.title
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
+    }
+    function loadFromLocalStorage() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return [];
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed.map(item => ({
+                dateDisplay: item.dateDisplay,
+                dateObj: new Date(item.dateObj),
+                church: item.church,
+                title: item.title
+            }));
+        } catch(e) { return []; }
+    }
+
+    // ---------- Bewerkingen op de lijst ----------
+    function addSermon(dateRaw, church, title) {
+        if (!church || church.trim()==="") { alert("Gemeente mag niet leeg zijn."); return false; }
+        if (!title || title.trim()==="") { alert("Titel mag niet leeg zijn."); return false; }
+        const parsed = parseToDMY(dateRaw);
+        if (!parsed) {
+            alert(`Ongeldige datum: "${dateRaw}". Gebruik bijvoorbeeld 15 jan 2025, 31-12-2024 of 2025-01-15.`);
+            return false;
+        }
+        sermons.push({
+            dateDisplay: parsed.dateStr,
+            dateObj: parsed.dateObj,
+            church: church.trim(),
+            title: title.trim()
+        });
+        sortFullListByDate();
+        saveToLocalStorage();
+        return true;
+    }
+
+    function sortFullListByDate() {
+        sermons.sort((a,b) => a.dateObj - b.dateObj);
+    }
+
+    function replaceAllSermons(newSermons) {
+        sermons = newSermons;
+        sortFullListByDate();
+        saveToLocalStorage();
+        render();
+    }
+
+    function clearAllSermons() {
+        sermons = [];
+        saveToLocalStorage();
+        render();
+    }
+
+    // ---------- Filter en sorteer (voor weergave) ----------
+    function getFilteredAndSorted() {
+        let filtered = sermons.filter(s => {
+            if (!searchTerm) return true;
+            const term = searchTerm.toLowerCase();
+            return s.dateDisplay.toLowerCase().includes(term) ||
+                   s.church.toLowerCase().includes(term) ||
+                   s.title.toLowerCase().includes(term);
+        });
+        const col = currentSort.column;
+        const dir = currentSort.direction;
+        filtered.sort((a,b) => {
+            if (col === 'date') {
+                const cmp = a.dateObj - b.dateObj;
+                return dir === 'asc' ? cmp : -cmp;
+            } else if (col === 'church') {
+                const cmp = a.church.localeCompare(b.church);
+                return dir === 'asc' ? cmp : -cmp;
+            } else {
+                const cmp = a.title.localeCompare(b.title);
+                return dir === 'asc' ? cmp : -cmp;
+            }
+        });
+        return filtered;
+    }
+
+    function computeDuplicates(dataArray) {
+        if (!dataArray.length) return { titleMsg: "geen data", churchMsg: "geen data" };
+        const titleCnt = new Map(), churchCnt = new Map();
+        for (let item of dataArray) {
+            titleCnt.set(item.title, (titleCnt.get(item.title)||0)+1);
+            churchCnt.set(item.church, (churchCnt.get(item.church)||0)+1);
+        }
+        let dupT=0, dupC=0;
+        for (let c of titleCnt.values()) if (c>1) dupT++;
+        for (let c of churchCnt.values()) if (c>1) dupC++;
+        return { titleMsg: dupT ? `${dupT} titel(s) meervoudig` : "Geen dubbele titels",
+                 churchMsg: dupC ? `${dupC} gemeente(n) meervoudig` : "Geen dubbele gemeenten" };
+    }
+
+    function render() {
+        const sortedFiltered = getFilteredAndSorted();
+        const tbody = document.getElementById('tableBody');
+        if (sortedFiltered.length === 0) {
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="3">✝️ Geen preken gevonden. Voeg toe of importeer CSV.</td></tr>';
+            document.getElementById('displayedCount').innerText = '0';
+            document.getElementById('duplicateStats').innerHTML = '📚 Dubbele titels: -- &nbsp;&nbsp;|&nbsp;&nbsp; 🏠 Dubbele gemeenten: --';
+        } else {
+            let html = '';
+            for (let s of sortedFiltered) {
+                html += `<tr><td>${escapeHtml(s.dateDisplay)}</td><td>${escapeHtml(s.church)}</td><td>${escapeHtml(s.title)}</td></tr>`;
+            }
+            tbody.innerHTML = html;
+            document.getElementById('displayedCount').innerText = sortedFiltered.length;
+            const dup = computeDuplicates(sortedFiltered);
+            document.getElementById('duplicateStats').innerHTML = `📚 Dubbele titels: ${dup.titleMsg} &nbsp;&nbsp;|&nbsp;&nbsp; 🏠 Dubbele gemeenten: ${dup.churchMsg}`;
+        }
+        document.getElementById('totalCount').innerText = sermons.length;
+        updateSortIndicators();
+    }
+
+    function updateSortIndicators() {
+        document.getElementById('sortDateInd').innerHTML = currentSort.column === 'date' ? (currentSort.direction === 'asc' ? '▲' : '▼') : '↕️';
+        document.getElementById('sortChurchInd').innerHTML = currentSort.column === 'church' ? (currentSort.direction === 'asc' ? '▲' : '▼') : '↕️';
+        document.getElementById('sortTitleInd').innerHTML = currentSort.column === 'title' ? (currentSort.direction === 'asc' ? '▲' : '▼') : '↕️';
+    }
+
+    function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+    // ---------- CSV import (vervangt huidige lijst) ----------
+    function importCSVAndReplace(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            const lines = content.split(/\r?\n/);
+            let startRow = 0;
+            if (lines.length>0 && lines[0].toLowerCase().includes('datum') && lines[0].toLowerCase().includes('gemeente') && lines[0].toLowerCase().includes('titel')) startRow=1;
+            let imported = 0, skipped = 0;
+            const newSermons = [];
+            for (let i=startRow; i<lines.length; i++) {
+                let line = lines[i].trim();
+                if (line === "") continue;
+                let parts = line.split(',');
+                if (parts.length < 3) { skipped++; continue; }
+                let dateRaw = parts[0].replace(/^["']|["']$/g, '').trim();
+                let church = parts[1].replace(/^["']|["']$/g, '').trim();
+                let title = parts[2].replace(/^["']|["']$/g, '').trim();
+                if (!church || !title) { skipped++; continue; }
+                const parsed = parseToDMY(dateRaw);
+                if (!parsed) { skipped++; continue; }
+                newSermons.push({
+                    dateDisplay: parsed.dateStr,
+                    dateObj: parsed.dateObj,
+                    church: church,
+                    title: title
+                });
+                imported++;
+            }
+            if (imported > 0) {
+                replaceAllSermons(newSermons);
+                alert(`✅ ${imported} preken geïmporteerd (huidige lijst vervangen). ${skipped} ongeldige rijen overgeslagen.`);
+            } else {
+                alert("Geen geldige preken gevonden. Zorg voor kolommen: Datum, Gemeente, Titel.");
+            }
+        };
+        reader.onerror = () => alert("Fout bij lezen bestand.");
+        reader.readAsText(file, "UTF-8");
+    }
+
+    // ---------- Export functies ----------
+    function getAllSortedByDate() { return [...sermons].sort((a,b)=>a.dateObj-b.dateObj); }
+    function exportToCSV(dataArray, filename) {
+        if (!dataArray.length) { alert("Geen data om te exporteren."); return; }
+        let header = "Datum,Gemeente,Titel\n";
+        let rows = dataArray.map(s => `"${s.dateDisplay}","${s.church.replace(/"/g, '""')}","${s.title.replace(/"/g, '""')}"`).join("\n");
+        const blob = new Blob([header+rows], {type:"text/csv;charset=utf-8;"});
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.href = url; link.setAttribute("download", filename);
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+    async function exportToPDF(dataArray, titlePrefix) {
+        if (!dataArray.length) { alert("Geen preken voor PDF."); return; }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        const tableData = dataArray.map(s => [s.dateDisplay, s.church, s.title]);
+        doc.setFontSize(16); doc.text(`${titlePrefix} - Preekoverzicht`, 14, 15);
+        doc.setFontSize(9); doc.text(`Gegenereerd: ${new Date().toLocaleString()}`, 14, 23);
+        doc.autoTable({ head: [['Datum (DD-MM-JJJJ)', 'Gemeente', 'Titel']], body: tableData, startY: 30,
+            styles: { fontSize: 8, cellPadding: 2 }, headStyles: { fillColor: [41,112,147], textColor: 255 },
+            alternateRowStyles: { fillColor: [240,248,255] }, margin: { left: 10, right: 10 } });
+        doc.save(`${titlePrefix.replace(/\s/g, '_')}_preken.pdf`);
+    }
+
+    // ---------- Event listeners en initialisatie ----------
+    document.addEventListener('DOMContentLoaded', () => {
+        // Laad bestaande data uit localStorage
+        sermons = loadFromLocalStorage();
+        if (sermons.length === 0) {
+            // Start met een lege lijst
+            sermons = [];
+        } else {
+            sortFullListByDate();
+        }
+        render();
+
+        // Sorteerkoppen
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => {
+                let col = th.getAttribute('data-sort');
+                if (currentSort.column === col) currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                else { currentSort.column = col; currentSort.direction = 'asc'; }
+                render();
+            });
+        });
+
+        // Zoekveld
+        document.getElementById('searchInput').addEventListener('input', (e) => { searchTerm = e.target.value; render(); });
+
+        // Toevoegen
+        document.getElementById('addBtn').addEventListener('click', () => {
+            const dateVal = document.getElementById('newDate').value;
+            const churchVal = document.getElementById('newChurch').value;
+            const titleVal = document.getElementById('newTitle').value;
+            if (addSermon(dateVal, churchVal, titleVal)) {
+                document.getElementById('newDate').value = '';
+                document.getElementById('newChurch').value = '';
+                document.getElementById('newTitle').value = '';
+                render();
+            }
+        });
+
+        // Lijst wissen
+        document.getElementById('clearAllBtn').addEventListener('click', () => {
+            if (confirm("Weet u zeker dat u ALLE preken wilt wissen?")) clearAllSermons();
+        });
+
+        // Import CSV (vervangt huidige)
+        const hiddenFileInput = document.createElement('input');
+        hiddenFileInput.type = 'file';
+        hiddenFileInput.accept = '.csv';
+        hiddenFileInput.style.display = 'none';
+        document.body.appendChild(hiddenFileInput);
+        document.getElementById('importReplaceBtn').addEventListener('click', () => hiddenFileInput.click());
+        hiddenFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                importCSVAndReplace(e.target.files[0]);
+                hiddenFileInput.value = '';
+            }
+        });
+
+        // Exporteer naar preektemp.csv (huidige volledige lijst)
+        document.getElementById('exportToCsvBtn').addEventListener('click', () => {
+            if (sermons.length === 0) { alert("Geen preken om te exporteren."); return; }
+            exportToCSV(getAllSortedByDate(), "preektemp.csv");
+        });
+
+        // Exporteer alle preken als PDF
+        document.getElementById('exportAllPdf').addEventListener('click', () => {
+            if (!sermons.length) { alert("Geen preken voor PDF."); return; }
+            exportToPDF(getAllSortedByDate(), "Alle_preken");
+        });
+
+        // Exporteer gesorteerde/gefilterde resultaten
+        document.getElementById('exportSortedCsv').addEventListener('click', () => {
+            const currentDisplay = getFilteredAndSorted();
+            if (!currentDisplay.length) { alert("Geen preken in huidige weergave."); return; }
+            exportToCSV(currentDisplay, "gesorteerde_filter_resultaten.csv");
+        });
+        document.getElementById('exportSortedPdf').addEventListener('click', () => {
+            const currentDisplay = getFilteredAndSorted();
+            if (!currentDisplay.length) { alert("Geen data voor PDF."); return; }
+            exportToPDF(currentDisplay, "Gesorteerde_resultaten");
+        });
+    });
+</script>
+</body>
+</html>
